@@ -1,4 +1,4 @@
-import nimbioseq, os, strutils
+import seqfulib, os, strutils
 
 proc mbp(length: int):string = formatFloat(float(length)/1e6, 
                                            ffDecimal,
@@ -23,7 +23,7 @@ proc seqSummary(input: string, total = false) =
         minLen = min(s.length, minLen)
         maxLen = max(s.length, maxLen)
       else:
-        echo "--" & s.id & "--"
+        echo "--" & s.name & "--"
         echo "Length: ", s.length, " (" & mbp(s.length) & " mbp)"
         echo "GC: ", percent(s.gc, s.length) & "%"
         echo "Ambiguous: ", percent(s.ambiguous, s.length) & "%"

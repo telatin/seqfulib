@@ -1,4 +1,4 @@
-import nimbioseq, future, tables, sequtils, strutils, os, math
+import seqfulib, future, tables, sequtils, strutils, os, math
 
 proc seqSummary(input: string, kmer = 8, complement = false,
                                       relAbund = false) =
@@ -19,7 +19,7 @@ proc seqSummary(input: string, kmer = 8, complement = false,
       if relAbund:
         var sum = counts.foldl(a + b)
         freqs = counts.map(x => (float)x / sum)
-      stdout.write s.id
+      stdout.write s.name
       i = 0
       while i < maxNum:
         stdout.write "\t"

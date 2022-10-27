@@ -1,4 +1,4 @@
-import nimbioseq, os, strutils
+import seqfulib, os, strutils
 
 proc checkFastq(input: string, total = false) =
     if input != "":

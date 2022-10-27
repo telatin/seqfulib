@@ -66,3 +66,7 @@ iterator readFastq(filename: string): Record {..}
 iterator to iterate over the FASTQ records in a file
 
 iterator readSeqs(filename: string): Record {..}
+
+## Original module
+
+Based on `nimbioseq` by Jonathan Badger

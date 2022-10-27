@@ -1,4 +1,4 @@
-import nimbioseq, os, strutils, tables
+import seqfulib, os, strutils, tables
 
 proc extractFastx(input: string, list: string) =
   var seen = initTable[string, bool]()
@@ -7,9 +7,10 @@ proc extractFastx(input: string, list: string) =
       seen[line] = true
   if input != "":
     for s in readSeqs(input):
-      if seen.has_key s.id:
+      if seen.has_key s.name:
         if s.quality != "":
            echo s.to_fastq
         else:
           echo s.to_fasta
+          
 when isMainModule: import cligen;dispatch(extractFastx)

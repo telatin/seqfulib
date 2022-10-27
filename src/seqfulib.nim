@@ -1,15 +1,21 @@
 ## Nim routines for processing DNA/RNA/Protein sequences
 
 import sequtils, strutils, math, tables, osproc, streams, zip/gzipfiles
+import readfq
 
-type Record* = object
+type UniversalSeqRecord* = object
     ## This type represents a genetic sequence with optional quality
-    id*: string
-    description*: string
+    name*: string
+    comment*: string
     quality*: string
     sequence*: string
 
-proc reverseComplement*(self:Record):Record =
+
+proc reverse*(str: string): string =
+  for s in str:
+    result = s & result
+
+proc reverseComplement*(self:FQRecord):FQRecord =
   # returns reverse complement of sequence
   var revseq = newseq[char]()
   var slen = len(self.sequence)
@@ -25,39 +31,41 @@ proc reverseComplement*(self:Record):Record =
         revseq.add('A')
       else:
         revseq.add('N')
-  Record(id:self.id, description: self.description, quality: self.quality,
+
+  # 0.4.0 - Add reverse of quality string
+  FQRecord(name:self.name, comment: self.comment, quality: reverse(self.quality),
          sequence: revseq.join)
 
 
-proc toFasta*(self:Record, lineLength = 60): string =
-  ## returns FASTA formatted string of sequence record
-  var header = ">" & self.id
-  if self.description != "":
-    header = header & " " & self.description
+proc toFasta*(self:FQRecord, lineLength = 60): string =
+  ## returns FASTA formatted string of sequence FQRecord
+  var header = ">" & self.name
+  if self.comment != "":
+    header = header & " " & self.comment
   header & "\n" & map(toSeq(countup(0,self.sequence.len(), lineLength)),
                        proc(x:int):string = 
                          self.sequence[x..x+lineLength-1]).join("\n")
 
-proc qualToChar*(q: int): char =
+proc qualToChar*(q: int, offset = 33): char =
   ## returns character for a given Illumina quality score
-  (q+33).char
+  (q+offset).char
   
-proc charToQual*(c: char): int =
+proc charToQual*(c: char, offset = 33): int =
   ## returns Illumina quality score for a given character
-  c.ord - 33
+  c.ord - offset
 
-proc toFastq*(self:Record, qualityValue = 30): string =
-  ## returns FASTQ formatted string of sequence record with given quality
+proc toFastq*(self:FQRecord, qualityValue = 30): string =
+  ## returns FASTQ formatted string of sequence FQRecord with given quality
   ## value to be applied to sequence
-  var header = "@" & self.id
+  var header = "@" & self.name
   var quality = self.quality
   if quality == "":
     quality = strutils.repeat(qualityValue.qualToChar, self.sequence.len)
-  if self.description != "":
-    header = header & " " & self.description
+  if self.comment != "":
+    header = header & " " & self.comment
   header & "\n" & self.sequence & "\n+\n" & quality
 
-proc length*(self:Record): int = 
+proc length*(self:FQRecord): int = 
   ## returns length of sequence
   self.sequence.len()
 
@@ -87,7 +95,7 @@ proc num2kmer*(num, klen:int):string =
     n = n - p*baseNum
   kmer
 
-proc toKmerFrequency*(self:Record, klen:int, 
+proc toKmerFrequency*(self:FQRecord, klen:int, 
                       includeComplement = false): seq[int] =
   ## returns (overlapping) kmer frequencies of a nucleotide sequence
   var counts = newSeq[int](4^klen)
@@ -105,16 +113,16 @@ proc toKmerFrequency*(self:Record, klen:int,
         counts[kmer2num(kmer)] += 1
   counts
 
-proc gc*(self:Record): int =
+proc gc*(self:FQRecord): int =
   ## returns the number of bases that are G or C
   self.sequence.count({'G','C','g','c'})
 
-proc ambiguous*(self:Record): int = 
+proc ambiguous*(self:FQRecord): int = 
   ## returns the number of bases that are not AGCTU
   self.length - self.sequence.count({'A', 'G', 'C', 'T', 'U',
                                       'a', 'g', 'c', 't', 'u'})
 
-iterator codons(self: Record) : string = 
+iterator codons(self: FQRecord) : string = 
   var i = 0
   var s = self.sequence.toUpperAscii
   while i < self.length - 2:
@@ -123,7 +131,7 @@ iterator codons(self: Record) : string =
        yield codon
     i += 3
 
-proc translate*(self:Record, code = 1): Record = 
+proc translate*(self:FQRecord, code = 1, other = '-'): FQRecord = 
   ## translates a nucleotide sequence with the given genetic code number
   ## see https://www.ncbi.nlm.nih.gov/Taxonomy/Utils/wprintgc.cgi for codes
   var codeMap = 
@@ -161,8 +169,8 @@ proc translate*(self:Record, code = 1): Record =
     if num != -1:
       transeq.add(code[num])
     else:
-      transeq.add('X')
-  Record(id:self.id, description: self.description, quality: self.quality,
+      transeq.add(other)
+  FQRecord(name:self.name, comment: self.comment, quality: self.quality,
          sequence: transeq.join)
 
 iterator compressedLines*(filename: string): string =
@@ -172,7 +180,7 @@ iterator compressedLines*(filename: string): string =
       yield line
   elif filename.find(".bz2") > -1:
     var process = startProcess("bzcat", args=[filename], options={poUsePath})
-    var line = TaintedString("")
+    var line = ""
     while process.outputStream.readLine(line):
       yield line
     process.close
@@ -181,57 +189,60 @@ iterator compressedLines*(filename: string): string =
       yield line
     
   
-iterator readFasta*(filename: string): Record =
-  ## iterator to iterate over the FASTA records in a file
-  var s = Record(id:"", description:"", sequence:"")
+iterator readFasta*(filename: string): FQRecord =
+  ## iterator to iterate over the FASTA FQRecords in a file
+  var s = FQRecord(name:"", comment:"", sequence:"")
   var seqLines = @[""]
   for line in compressedLines filename:
+
+    if len(line) == 0:        # Fix parsing error on empty lines
+      continue
     if line[0] == '>':
-      if s.id != "":
+      if s.name != "":
         s.sequence = seqLines.join
         yield s
-        s.id = ""
-        s.description = ""
+        s.name = ""
+        s.comment = ""
         s.sequence = ""
         seqLines = @[]
       var fields = split(line[1..len(line)-1], ' ', 1)
       if len(fields) > 1:
-        (s.id, s.description) = fields
+        (s.name, s.comment) = fields
       else:
-        s.id = fields[0]
+        s.name = fields[0]
     else:
       seqLines.add(line)
-  if s.id != "":
+  if s.name != "":
     s.sequence = seqLines.join
     yield s
 
-iterator readFastq*(filename:string): Record =
-  ## iterator to iterate over the FASTQ records in a file
-  var s = Record(id:"", description:"", quality: "", sequence:"")
+iterator readFastq*(filename:string): FQRecord =
+  ## iterator to iterate over the FASTQ FQRecords in a file
+  var s = FQRecord(name:"", comment:"", quality: "", sequence:"")
   var lineNum = 0
   for line in compressedLines filename:
     if lineNum == 0:
-      if s.id != "":
+      if s.name != "":
         yield s
-        s.id = ""
-        s.description = ""
+        s.name = ""
+        s.comment = ""
         s.sequence = ""
         s.quality = ""
       var fields = split(line[1..len(line)-1], ' ', 1)
       if len(fields) > 1:
-        (s.id, s.description) = fields
+        (s.name, s.comment) = fields
       else:
-        s.id = fields[0]
+        s.name = fields[0]
     elif lineNum == 1:
       s.sequence = line
     elif lineNum == 3:
       s.quality = line
     lineNum = (lineNum + 1) mod 4
-  if s.id != "":
+  if s.name != "":
     yield s
            
 
-iterator readSeqs*(filename:string):Record = 
+iterator readSeqs*(filename:string):FQRecord = 
   for line in compressedLines filename:
     if line[0] == '>':
       for s in readFasta(filename):
