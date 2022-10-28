@@ -10,7 +10,7 @@ skipFiles     = @["checkFastq.nim", "extractFastx.nim", "kmerCount.nim",
 
 # Dependencies
 
-requires "nim >= 1.4", "zip >= 0.2.1"
+requires "nim >= 1.4", "zip >= 0.2.1", "readfq"
 
 task test, "Run the test!":
   withDir "tests":
